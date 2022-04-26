@@ -26,61 +26,91 @@ https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/azu
 
 ```
 trigger:
-  - main
-  
-pr: none
+- master
+- staging
 
-variables: 
-  # Service connection as configured in project settings
-  prodConnection: ''
+variables:
+  azureSubscription: $(azureSubscription)
+  vmImageName: 'ubuntu-latest'
 
-  # App name
-  prodApp: 'website-prod'
-  
 stages:
-  - stage: build
-    displayName: 'Build'
-    jobs:
-    - job: build_test
-      displayName: 'Build and test'
-      pool:
-        vmImage: 'Ubuntu-16.04'
-      steps:
-      - task: NodeTool@0
-        inputs:
-          versionSpec: '12.x'
-        displayName: 'Install Node.js'
-      - script: |
-          npm install
-        displayName: 'npm install'
-      - task: ArchiveFiles@2
-        inputs:
-          rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
-          includeRootFolder: false
-      - task: PublishPipelineArtifact@0
-        inputs:
-          targetPath: '$(System.ArtifactsDirectory)'
-  
-  
-  - stage: prod
-    displayName: 'Prod'
-    dependsOn: build
-    jobs:
-    - deployment: deployProd
-      displayName: 'Deploy prod'
-      environment: prod
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-            - task: DownloadPipelineArtifact@1
-              inputs:
-                downloadPath: '$(System.DefaultWorkingDirectory)'
-            - task: AzureWebApp@1
-              inputs:
-                azureSubscription: $(prodConnection)
-                appType: 'webAppLinux'
-                appName: $(prodApp)
-                runtimeStack: 'NODE|12.1'
-                startUpCommand: 'npm run start'
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '10.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        npm install
+        npm run build --if-present
+        npm run test --if-present
+      displayName: 'npm install, build and test'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive files'
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+
+    - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+      artifact: drop
+
+- stage: DeployStaging
+  displayName: DeployStaging
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/staging'))
+  jobs:
+  - deployment: DeployStaging
+    displayName: DeployStaging
+    environment: staging
+    pool:
+      vmImage: $(vmImageName)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Azure Web App Deploy staging: '
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appType: webAppLinux
+              appName: website-staging
+              runtimeStack: 'NODE|12-lts'
+              package: $(Pipeline.Workspace)/drop/$(Build.BuildId).zip
+              startUpCommand: 'npm run start'
+
+- stage: DeployProd
+  displayName: DeployProd
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+  jobs:
+  - deployment: DeployProd
+    displayName: DeployProd
+    environment: prod
+    pool:
+      vmImage: $(vmImageName)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Azure Web App Deploy prod: '
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appType: webAppLinux
+              appName: website-prod
+              runtimeStack: 'NODE|12-lts'
+              package: $(Pipeline.Workspace)/drop/$(Build.BuildId).zip
+              startUpCommand: 'npm run start'
 ```
