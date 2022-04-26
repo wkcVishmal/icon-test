@@ -29,13 +29,13 @@ trigger:
   - main
   
 pr: none
-  
+
 variables: 
   # Service connection as configured in project settings
-  prodConnection: 'isabelProd'
+  prodConnection: ''
 
   # App name
-  prodApp: 'isabelProd'
+  prodApp: 'website-prod'
   
 stages:
   - stage: build
@@ -68,7 +68,7 @@ stages:
     jobs:
     - deployment: deployProd
       displayName: 'Deploy prod'
-      environment: isabelProdEnv
+      environment: prod
       strategy:
         runOnce:
           deploy:
