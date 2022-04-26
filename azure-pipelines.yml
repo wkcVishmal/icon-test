@@ -10,7 +10,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-- script: npm i
+- script: cd website && npm i
   displayName: 'Run npm install'
 
 - script: |
